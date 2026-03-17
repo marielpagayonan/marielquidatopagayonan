@@ -46,16 +46,14 @@ def get_connection():
 def get_all_students(search=None):
     conn = get_connection()
     cursor = conn.cursor()
-
     if search:
         cursor.execute("SELECT * FROM students WHERE name LIKE ?", ('%' + search + '%',))
     else:
         cursor.execute("SELECT * FROM students")
-
     rows = cursor.fetchall()
     conn.close()
-
-    return [{"id": r[0], "name": r[1], "grade": r[2], "section": r[3]} for r in rows]
+    # Ensure grade is always int
+    return [{"id": r[0], "name": r[1], "grade": int(r[2]), "section": r[3]} for r in rows]
 
 def get_student_by_id(student_id):
     conn = get_connection()
@@ -63,22 +61,21 @@ def get_student_by_id(student_id):
     cursor.execute("SELECT * FROM students WHERE id=?", (student_id,))
     row = cursor.fetchone()
     conn.close()
-
     if row:
-        return {"id": row[0], "name": row[1], "grade": row[2], "section": row[3]}
+        return {"id": row[0], "name": row[1], "grade": int(row[2]), "section": row[3]}
     return None
 
 def add_student(name, grade, section):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO students (name, grade, section) VALUES (?, ?, ?)", (name, grade, section))
+    cursor.execute("INSERT INTO students (name, grade, section) VALUES (?, ?, ?)", (name, int(grade), section))
     conn.commit()
     conn.close()
 
 def update_student(student_id, name, grade, section):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE students SET name=?, grade=?, section=? WHERE id=?", (name, grade, section, student_id))
+    cursor.execute("UPDATE students SET name=?, grade=?, section=? WHERE id=?", (name, int(grade), section, student_id))
     conn.commit()
     conn.close()
 
@@ -95,19 +92,16 @@ def login():
     if request.method == 'POST':
         username = request.form.get("username")
         password = request.form.get("password")
-
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
         user = cursor.fetchone()
         conn.close()
-
         if user:
             session['user'] = username
             return redirect(url_for('list_students'))
         else:
             return "Invalid credentials"
-
     return render_template_string("""
     <html>
     <body class="bg-light text-center mt-5">
@@ -126,38 +120,32 @@ def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
 
-# ----- STUDENTS -----
+# ----- STUDENTS DASHBOARD -----
 @app.route('/students')
 def list_students():
     if 'user' not in session:
         return redirect(url_for('login'))
-
     search = request.args.get('search')
     students = get_all_students(search)
-
     return render_template_string("""
     <html>
     <head>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     </head>
     <body class="bg-light">
-
     <div class="container mt-5">
         <h1 class="text-center">Student Dashboard</h1>
-
         <div class="text-center mb-3">
             <a href="/add_student_form" class="btn btn-primary">Add Student</a>
             <a href="/summary" class="btn btn-info text-white">Summary</a>
             <a href="/db_data" class="btn btn-secondary">View All Students</a>
             <a href="/logout" class="btn btn-danger">Logout</a>
         </div>
-
         <form method="GET" class="mb-3 text-center">
             <input type="text" name="search" placeholder="Search..." class="form-control w-25 d-inline">
             <button class="btn btn-primary">Search</button>
             <a href="/students" class="btn btn-secondary">Reset</a>
         </form>
-
         <table class="table table-bordered bg-white shadow">
             <thead class="table-dark">
                 <tr>
@@ -200,7 +188,7 @@ def add_student_form():
         <h2>Add Student</h2>
         <form method="POST" action="/add_student">
             <input name="name" class="form-control mb-2" placeholder="Name">
-            <input name="grade" type="number" class="form-control mb-2">
+            <input name="grade" type="number" class="form-control mb-2" placeholder="Grade">
             <input name="section" class="form-control mb-2" placeholder="Section">
             <button class="btn btn-success">Add</button>
         </form>
@@ -223,21 +211,19 @@ def edit_student_route(id):
     student = get_student_by_id(id)
     if not student:
         return "Student not found", 404
-
     if request.method == 'POST':
         update_student(id,
                        request.form.get("name"),
                        int(request.form.get("grade")),
                        request.form.get("section"))
         return redirect(url_for('list_students'))
-
     return render_template_string("""
     <html><body class="bg-light">
     <div class="container mt-5">
         <h2>Edit Student</h2>
         <form method="POST">
             <input name="name" value="{{student.name}}" class="form-control mb-2" placeholder="Name">
-            <input name="grade" type="number" value="{{student.grade}}" class="form-control mb-2">
+            <input name="grade" type="number" value="{{student.grade}}" class="form-control mb-2" placeholder="Grade">
             <input name="section" value="{{student.section}}" class="form-control mb-2" placeholder="Section">
             <button class="btn btn-success">Update</button>
         </form>
@@ -259,7 +245,6 @@ def summary():
     names = [s['name'] for s in students]
     colors = ["green" if g >= 75 else "red" for g in grades]
     avg = sum(grades)/len(grades) if grades else 0
-
     return render_template_string("""
     <html>
     <head><script src="https://cdn.jsdelivr.net/npm/chart.js"></script></head>
@@ -283,7 +268,7 @@ def summary():
     </html>
     """, names=names, grades=grades, colors=colors, avg=avg)
 
-# ----- DATABASE CHECK (PROOF) -----
+# ----- DATABASE CHECK -----
 @app.route('/db_check')
 def db_check():
     conn = get_connection()
