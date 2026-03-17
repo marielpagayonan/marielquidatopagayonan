@@ -5,7 +5,7 @@ import os
 app = Flask(__name__)
 app.secret_key = "secret123"
 
-# ✅ Render-safe DB path
+# Render-safe DB path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_NAME = os.environ.get("DB_NAME", "students.db")
 DB_NAME = os.path.join(BASE_DIR, os.path.basename(DB_NAME))
@@ -148,6 +148,7 @@ def list_students():
         <div class="text-center mb-3">
             <a href="/add_student_form" class="btn btn-primary">Add Student</a>
             <a href="/summary" class="btn btn-info text-white">Summary</a>
+            <a href="/db_data" class="btn btn-secondary">View All Students</a>
             <a href="/logout" class="btn btn-danger">Logout</a>
         </div>
 
@@ -190,7 +191,7 @@ def list_students():
     </html>
     """, students=students)
 
-# ----- ADD -----
+# ----- ADD STUDENT -----
 @app.route('/add_student_form')
 def add_student_form():
     return render_template_string("""
@@ -216,7 +217,35 @@ def add_student_route():
     )
     return redirect(url_for('list_students'))
 
-# ----- DELETE -----
+# ----- EDIT STUDENT -----
+@app.route('/edit_student/<int:id>', methods=['GET', 'POST'])
+def edit_student_route(id):
+    student = get_student_by_id(id)
+    if not student:
+        return "Student not found", 404
+
+    if request.method == 'POST':
+        update_student(id,
+                       request.form.get("name"),
+                       int(request.form.get("grade")),
+                       request.form.get("section"))
+        return redirect(url_for('list_students'))
+
+    return render_template_string("""
+    <html><body class="bg-light">
+    <div class="container mt-5">
+        <h2>Edit Student</h2>
+        <form method="POST">
+            <input name="name" value="{{student.name}}" class="form-control mb-2" placeholder="Name">
+            <input name="grade" type="number" value="{{student.grade}}" class="form-control mb-2">
+            <input name="section" value="{{student.section}}" class="form-control mb-2" placeholder="Section">
+            <button class="btn btn-success">Update</button>
+        </form>
+    </div>
+    </body></html>
+    """, student=student)
+
+# ----- DELETE STUDENT -----
 @app.route('/delete_student/<int:id>')
 def delete_student_route(id):
     delete_student(id)
@@ -229,7 +258,6 @@ def summary():
     grades = [s['grade'] for s in students]
     names = [s['name'] for s in students]
     colors = ["green" if g >= 75 else "red" for g in grades]
-
     avg = sum(grades)/len(grades) if grades else 0
 
     return render_template_string("""
@@ -263,16 +291,58 @@ def db_check():
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
     tables = cursor.fetchall()
     conn.close()
+    return {"database": DB_NAME, "tables": tables}
 
-    return {
-        "database": DB_NAME,
-        "tables": tables
-    }
-
+# ----- VIEW STUDENTS IN TABLE (REPLACE JSON) -----
 @app.route('/db_data')
 def db_data():
-    return {"students": get_all_students()}
+    students = get_all_students()
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>All Students</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-light">
+        <div class="container mt-5">
+            <h2 class="text-center mb-4">All Students</h2>
+            <table class="table table-bordered table-striped bg-white shadow">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Grade</th>
+                        <th>Section</th>
+                        <th>Remarks</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for s in students %}
+                    <tr>
+                        <td>{{ s.id }}</td>
+                        <td>{{ s.name }}</td>
+                        <td>{{ s.grade }}</td>
+                        <td>{{ s.section }}</td>
+                        <td>
+                            {% if s.grade >= 75 %}
+                                <span class="badge bg-success">Pass</span>
+                            {% else %}
+                                <span class="badge bg-danger">Fail</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <div class="text-center mt-3">
+                <a href="/students" class="btn btn-primary">Back to Dashboard</a>
+            </div>
+        </div>
+    </body>
+    </html>
+    """, students=students)
 
-# ----- RUN -----
+# ----- RUN APP -----
 if __name__ == '__main__':
     app.run(debug=True)
