@@ -5,9 +5,12 @@ import os
 app = Flask(__name__)
 app.secret_key = "secret123"
 
-DB_NAME = 'students.db'
+# ✅ Render-safe DB path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_NAME = os.environ.get("DB_NAME", "students.db")
+DB_NAME = os.path.join(BASE_DIR, os.path.basename(DB_NAME))
 
-# ----- Initialize DB -----
+# ----- DB INIT -----
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -29,7 +32,6 @@ def init_db():
         )
     """)
 
-    # default login
     cursor.execute("INSERT OR IGNORE INTO users (id, username, password) VALUES (1, 'admin', '1234')")
 
     conn.commit()
@@ -38,8 +40,11 @@ def init_db():
 init_db()
 
 # ----- DB FUNCTIONS -----
+def get_connection():
+    return sqlite3.connect(DB_NAME)
+
 def get_all_students(search=None):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_connection()
     cursor = conn.cursor()
 
     if search:
@@ -53,7 +58,7 @@ def get_all_students(search=None):
     return [{"id": r[0], "name": r[1], "grade": r[2], "section": r[3]} for r in rows]
 
 def get_student_by_id(student_id):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM students WHERE id=?", (student_id,))
     row = cursor.fetchone()
@@ -64,21 +69,21 @@ def get_student_by_id(student_id):
     return None
 
 def add_student(name, grade, section):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("INSERT INTO students (name, grade, section) VALUES (?, ?, ?)", (name, grade, section))
     conn.commit()
     conn.close()
 
 def update_student(student_id, name, grade, section):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("UPDATE students SET name=?, grade=?, section=? WHERE id=?", (name, grade, section, student_id))
     conn.commit()
     conn.close()
 
 def delete_student(student_id):
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM students WHERE id=?", (student_id,))
     conn.commit()
@@ -91,7 +96,7 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
 
-        conn = sqlite3.connect(DB_NAME)
+        conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
         user = cursor.fetchone()
@@ -103,7 +108,7 @@ def login():
         else:
             return "Invalid credentials"
 
-    html = """
+    return render_template_string("""
     <html>
     <body class="bg-light text-center mt-5">
         <h2>Login</h2>
@@ -114,8 +119,7 @@ def login():
         </form>
     </body>
     </html>
-    """
-    return render_template_string(html)
+    """)
 
 @app.route('/logout')
 def logout():
@@ -131,7 +135,7 @@ def list_students():
     search = request.args.get('search')
     students = get_all_students(search)
 
-    html = """
+    return render_template_string("""
     <html>
     <head>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -148,7 +152,7 @@ def list_students():
         </div>
 
         <form method="GET" class="mb-3 text-center">
-            <input type="text" name="search" placeholder="Search student..." class="form-control w-25 d-inline">
+            <input type="text" name="search" placeholder="Search..." class="form-control w-25 d-inline">
             <button class="btn btn-primary">Search</button>
             <a href="/students" class="btn btn-secondary">Reset</a>
         </form>
@@ -182,34 +186,26 @@ def list_students():
             </tbody>
         </table>
     </div>
-
     </body>
     </html>
-    """
-    return render_template_string(html, students=students)
+    """, students=students)
 
 # ----- ADD -----
 @app.route('/add_student_form')
 def add_student_form():
-    if 'user' not in session:
-        return redirect(url_for('login'))
-
-    html = """
-    <html>
-    <body class="bg-light">
-        <div class="container mt-5">
-            <h2>Add Student</h2>
-            <form method="POST" action="/add_student">
-                <input name="name" class="form-control mb-2" placeholder="Name">
-                <input name="grade" type="number" class="form-control mb-2">
-                <input name="section" class="form-control mb-2" placeholder="Section">
-                <button class="btn btn-success">Add</button>
-            </form>
-        </div>
-    </body>
-    </html>
-    """
-    return render_template_string(html)
+    return render_template_string("""
+    <html><body class="bg-light">
+    <div class="container mt-5">
+        <h2>Add Student</h2>
+        <form method="POST" action="/add_student">
+            <input name="name" class="form-control mb-2" placeholder="Name">
+            <input name="grade" type="number" class="form-control mb-2">
+            <input name="section" class="form-control mb-2" placeholder="Section">
+            <button class="btn btn-success">Add</button>
+        </form>
+    </div>
+    </body></html>
+    """)
 
 @app.route('/add_student', methods=['POST'])
 def add_student_route():
@@ -220,40 +216,6 @@ def add_student_route():
     )
     return redirect(url_for('list_students'))
 
-# ----- EDIT -----
-@app.route('/edit_student/<int:id>', methods=['GET', 'POST'])
-def edit_student_route(id):
-    if 'user' not in session:
-        return redirect(url_for('login'))
-
-    student = get_student_by_id(id)
-
-    if request.method == 'POST':
-        update_student(
-            id,
-            request.form.get("name"),
-            int(request.form.get("grade")),
-            request.form.get("section")
-        )
-        return redirect(url_for('list_students'))
-
-    html = """
-    <html>
-    <body class="bg-light">
-        <div class="container mt-5">
-            <h2>Edit Student</h2>
-            <form method="POST">
-                <input name="name" value="{{student.name}}" class="form-control mb-2">
-                <input name="grade" value="{{student.grade}}" class="form-control mb-2">
-                <input name="section" value="{{student.section}}" class="form-control mb-2">
-                <button class="btn btn-success">Update</button>
-            </form>
-        </div>
-    </body>
-    </html>
-    """
-    return render_template_string(html, student=student)
-
 # ----- DELETE -----
 @app.route('/delete_student/<int:id>')
 def delete_student_route(id):
@@ -263,31 +225,20 @@ def delete_student_route(id):
 # ----- SUMMARY -----
 @app.route('/summary')
 def summary():
-    if 'user' not in session:
-        return redirect(url_for('login'))
-
     students = get_all_students()
     grades = [s['grade'] for s in students]
     names = [s['name'] for s in students]
     colors = ["green" if g >= 75 else "red" for g in grades]
 
-    passed = len([g for g in grades if g >= 75])
-    failed = len([g for g in grades if g < 75])
-    avg = sum(grades) / len(grades) if grades else 0
+    avg = sum(grades)/len(grades) if grades else 0
 
-    html = """
+    return render_template_string("""
     <html>
-    <head>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    </head>
+    <head><script src="https://cdn.jsdelivr.net/npm/chart.js"></script></head>
     <body class="text-center mt-5">
         <h2>Summary</h2>
         <p>Average: {{avg}}</p>
-        <p>Passed: {{passed}}</p>
-        <p>Failed: {{failed}}</p>
-
         <canvas id="chart"></canvas>
-
         <script>
         new Chart(document.getElementById('chart'), {
             type: 'bar',
@@ -300,14 +251,9 @@ def summary():
             }
         });
         </script>
-
-        <a href="/students" class="btn btn-primary mt-3">Back</a>
     </body>
     </html>
-    """
-    return render_template_string(html, names=names, grades=grades,
-                                  colors=colors, avg=avg,
-                                  passed=passed, failed=failed)
+    """, names=names, grades=grades, colors=colors, avg=avg)
 
 if __name__ == '__main__':
     app.run(debug=True)
