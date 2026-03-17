@@ -255,5 +255,24 @@ def summary():
     </html>
     """, names=names, grades=grades, colors=colors, avg=avg)
 
+# ----- DATABASE CHECK (PROOF) -----
+@app.route('/db_check')
+def db_check():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = cursor.fetchall()
+    conn.close()
+
+    return {
+        "database": DB_NAME,
+        "tables": tables
+    }
+
+@app.route('/db_data')
+def db_data():
+    return {"students": get_all_students()}
+
+# ----- RUN -----
 if __name__ == '__main__':
     app.run(debug=True)
